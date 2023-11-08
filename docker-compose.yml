@@ -1,0 +1,25 @@
+services:
+  ftt_backend:
+    build: .
+    command: uvicorn server:app --port 8764 --host 0.0.0.0 --workers 5
+    environment:
+      - CLICKUP_API_KEY
+    ports:
+      - "8764:8764"
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+
+  ftt_frontend:
+    build: .
+    command:
+      - '/bin/sh'
+      - '-c'    
+      - 'sleep 2 && npm run dev'
+    ports:
+      - "8765:8765"
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+    depends_on:
+      - ftt_backend

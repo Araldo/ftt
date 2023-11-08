@@ -1,0 +1,46 @@
+.box{
+    width: 800px;
+    height: 500px;
+    margin: 10px;
+    float: left;
+}
+
+.boxhalf{
+  width: 750px;
+  height: 500px;
+  margin: 10px;
+  float: left;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+#app {
+  height: 100%;
+}
+
+.toastui-calendar-timegrid {
+  height: 100%;
+  /* fit-content or auto(IE) */
+  min-height: fit-content;
+}
+
+/* Declared class twice to increase the specificity. */
+/* You can use the `!important` but not recommended */
+.toastui-calendar-panel:not(.toastui-calendar-time).toastui-calendar-panel:not(.toastui-calendar-time) {
+  overflow-y: hidden;
+}
+
+.toastui-calendar-panel.toastui-calendar-panel {
+  overflow-y: hidden;
+}
+
+
+.toastui-calendar-template-time {
+  padding: 0 1px;
+  white-space: pre-wrap;
+}
