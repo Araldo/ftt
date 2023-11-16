@@ -92,33 +92,27 @@ def get_time_entries(team_id, start_date, end_date, assignee):
     response = get_request(f"https://api.clickup.com/api/v2/team/{team_id}/time_entries?start_date={start_date}&end_date={end_date}&assignee={assignee}")
     return response
 
-def get_time_entry_body(start, end, duration_hours, task_id, user_id, tags):
-    if len(tags) == 0:
-        return
-    billable = len(tags) > 1 or tags[0]["name"] != "client: brainnwave"
+def get_time_entry_body(start, end, duration_hours, task_id, user_id):
     return {
         "description": "",
-        "tags": tags,
         "start": int(start.timestamp() * 1000),
         "end": int(end.timestamp() * 1000),
-        "billable": "true" if billable else "false",
+        "billable": "false",
         "duration": int(duration_hours * 60 * 60 * 1000),
         "assignee": user_id,
         "tid": task_id
     }
 
 def update_time_entry_in_clickup(timer_id, start, end, duration_hours, task_id, user_id, team_id):
-    time_entry = get_time_entry(team_id, timer_id)
-    tags = time_entry["data"]["tags"]
-    body = get_time_entry_body(start, end, duration_hours, task_id, user_id, tags)
+    body = get_time_entry_body(start, end, duration_hours, task_id, user_id)
     body["tag_action"] = "replace"
     del body["assignee"] 
     response = requests.put(f"https://api.clickup.com/api/v2/team/{team_id}/time_entries/{timer_id}", json=body, headers=get_header())
     get_time_entries.clear_cache()
     return response
 
-def create_time_entry_in_clickup(start, end, duration_hours, task_id, user_id, team_id, tags):
-    body = get_time_entry_body(start, end, duration_hours, task_id, user_id, tags)
+def create_time_entry_in_clickup(start, end, duration_hours, task_id, user_id, team_id):
+    body = get_time_entry_body(start, end, duration_hours, task_id, user_id)
     response = requests.post(f"https://api.clickup.com/api/v2/team/{team_id}/time_entries", json=body, headers=get_header())
     get_time_entries.clear_cache()
     return response
@@ -220,12 +214,34 @@ def deduplicate(data: list[dict]) -> list[dict]:
     return [dict(key_value_tuple) for key_value_tuple in {_dict_to_tuple(record): record for record in data}.values()]
 
 @cache
-def get_time_entry_tags():
-    """Get all the labels that have been applied to time entries in a Workspace."""
-    
-    team_id = get_team_id()
-    response = get_request(f"https://api.clickup.com/api/v2/team/{team_id}/time_entries/tags")
-    return response
+def get_agile_space_id():
+    for space in get_spaces(get_team_id(), archived=False)["spaces"]:
+        if space["name"] == "Agile Things":
+            return space["id"]
+
+@cache
+def get_generic_folder_id():
+    agile_space_id = get_agile_space_id()
+    agile_folders = get_folders(agile_space_id)["folders"]
+    for folder in agile_folders:
+        if folder["name"] == ("Time tracking"):
+            for subfolder in folder["lists"]:
+                if subfolder["name"].startswith("Generic tickets"):
+                    return subfolder["id"]
+
+@cache
+def get_generic_tasks():
+    generic_folder_id = get_generic_folder_id()
+    generic_tasks = get_tasks(generic_folder_id)["tasks"]
+    generic_tasks = [
+        {'id': generic_task["id"], 'name': generic_task["name"], 'custom_id': f"BW-{9999-idx}"}
+        for idx, generic_task in enumerate(generic_tasks)
+    ]
+    return generic_tasks
+
+@app.get("/generic_tasks")
+async def generic_tasks():
+    return get_generic_tasks()
 
 @app.get("/sprint_tasks/{tag}/{mine_only}/{archived}")
 async def sprint_tasks(tag=None, mine_only=True, archived=False):
@@ -255,21 +271,15 @@ async def sprint_tasks(tag=None, mine_only=True, archived=False):
         in time_series_tasks
     ]
 
-    tasks = sprint_tasks + [{'id': '2tfb48r', 'name': 'Agile processes & product management'}]
-    for task in tasks:
-        if "custom_id" not in task:
-            task["custom_id"] = "BW-9999"
+    generic_tasks = get_generic_tasks()
+
+    tasks = sprint_tasks + generic_tasks
     tasks = deduplicate(tasks)
     tasks.sort(key=lambda task: task["custom_id"], reverse=True)
     tasks = [
         task | {"tags": task_tags_map.get(task["id"], [])}
         for task
         in tasks
-    ]
-    tasks = [
-        task | {"tags": [{'name': 'client: brainnwave', 'tag_bg': '#7C4DFF', 'tag_fg': '#7C4DFF', 'creator': 38587763}]} if task["custom_id"] == "BW-9999" else task
-        for task
-        in tasks        
     ]
     return tasks
 
@@ -280,19 +290,12 @@ def time_entries(start: int, end: int):
     return get_time_entries(get_team_id(), datetime.fromtimestamp(int(start)), datetime.fromtimestamp(int(end)), me)["data"]
 
 
-@app.get("/time_entry_tags")
-def time_entry_tags():
-    response = get_time_entry_tags()
-    response["data"].sort(key=lambda tag: tag["name"].replace("client: ", "").replace("project: ", ""))
-    return response
-
 @app.get("/create_time_entry/{start}/{end}/{task_id}")
-def create_time_entry(start, end, task_id, tags):
-    tags=eval(tags)
+def create_time_entry(start, end, task_id):
     me = get_user()["user"]["id"]
     team_id = get_team_id()
     duration_hours = (datetime.fromtimestamp(int(end)) - datetime.fromtimestamp(int(start))).total_seconds() / 60 / 60
-    response = create_time_entry_in_clickup(datetime.fromtimestamp(int(start)), datetime.fromtimestamp(int(end)), duration_hours, task_id, me, team_id, tags)
+    response = create_time_entry_in_clickup(datetime.fromtimestamp(int(start)), datetime.fromtimestamp(int(end)), duration_hours, task_id, me, team_id)
     return response.json()
 
 
@@ -301,6 +304,7 @@ def delete_time_entry(timer_id):
     team_id = get_team_id()
     response = delete_time_entry_in_clickup(team_id, timer_id)
     return response.json()
+
 
 @app.get("/update_time_entry/{timer_id}/{task_id}/{start}/{end}")
 def update_time_entry(timer_id, task_id, start, end):

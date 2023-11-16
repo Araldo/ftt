@@ -20,7 +20,8 @@ function App() {
   const [mineOnly, setMineOnly] = useLocalStorageState('mine_only', {defaultValue: true});
   const [weekName, setWeekName] = useState();
   const [spaceTags, setSpaceTags] = useState([]);
-  const [tags, setTags] = useState([]);
+  const [genericTasks, setGenericTasks] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [tasks, setTasks] = useState([]);
   const [timeEntries, setTimeEntries] = useState([]);
   const [selectedSpaceTags, setSelectedSpaceTags] = useLocalStorageState('selected_space_tags', {defaultValue: []});
@@ -66,7 +67,6 @@ function App() {
       id: String(Math.random()),
       taskId: selectedTask.id,
       title: " - " + selectedTask.custom_id + "\n" + selectedTask.name,
-      tags: selectedTask.tags,
       isAllday: eventData.isAllday,
       start: eventData.start,
       end: eventData.end,
@@ -104,7 +104,7 @@ function App() {
         return response.json();
       })
       .then((data) => {
-        getTimeEntries(cal);
+        getTimeEntries(cal, []);
       });
   };
 
@@ -119,25 +119,19 @@ function App() {
         return response.json();
       })
       .then((data) => {
-        getTimeEntries(cal);
+        getTimeEntries(cal, []);
       });
   };
 
   const createTimeEntry = (event) => {
     console.log(event)
-    console.log(event.tags.map((element) => {return {name: element.value, tag_bg: element.tag_bg, tag_fg: element.tag_fg}}));
-    const tags = event.tags.map((element) => {return {name: element.value, tag_bg: element.tag_bg.replace('#', '%23'), tag_fg: element.tag_fg.replace('#', '%23')}});
-    console.log(tags); 
-    console.log(JSON.stringify(tags));
     fetch(
       "http://localhost:8764/create_time_entry/" +
         event.start.getTime() / 1000 +
         "/" +
         event.end.getTime() / 1000 +
         "/" +
-        event.taskId +
-        "?tags=" +
-        replaceAll(JSON.stringify(tags), ',', '%2C'),
+        event.taskId,
       {
         method: "GET",
       }
@@ -146,19 +140,19 @@ function App() {
         return response.json();
       })
       .then((data) => {
-        getTimeEntries(cal);
+        getTimeEntries(cal, []);
       });
   };
 
   const nextWeek = (event) => {
     cal.current.calendarInstance.next();
-    getTimeEntries(cal);
+    getTimeEntries(cal, []);
     setWeekTitle(cal);
   };
 
   const prevWeek = (event) => {
     cal.current.calendarInstance.prev();
-    getTimeEntries(cal);
+    getTimeEntries(cal, []);
     setWeekTitle(cal);
   };
 
@@ -174,7 +168,10 @@ function App() {
     );
   };
 
-  const getTimeEntries = (cal) => {
+  const getTimeEntries = (cal, generic_tasks) => {
+    if (generic_tasks.length == 0) {
+      generic_tasks = genericTasks;
+    }
     const start = cal.current.calendarInstance.getDateRangeStart() / 1000;
     const end = cal.current.calendarInstance.getDateRangeEnd() / 1000 + 24 * 60 * 60;
     fetch(
@@ -183,20 +180,34 @@ function App() {
         method: "GET",
       }
     )
-      .then((response) => {
-        return response.json();
-      })
-      .then((data) => {
-        setTimeEntries(data);
-        cal.current.calendarInstance.clear();
-        populateEvents(data, cal);
-      });
+    .then((response) => {
+      return response.json();
+    })
+    .then((data) => {
+      setTimeEntries(data);
+      cal.current.calendarInstance.clear();
+      populateEvents(data, cal, generic_tasks);
+    });
   };
 
-  const populateEvents = (timeEntries, cal) => {
+  useEffect(() => {
+    getGenericTasks();
+    setWeekTitle(cal);
+    getSpaceTags();
+  }, []);
+
+  function timeout(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  const populateEvents = (timeEntries, cal, generic_tasks) => {
     timeEntries.map((timeEntry) => {
       if (timeEntry.task.custom_id === undefined) {
-        timeEntry.task.custom_id = "BW-9999";
+        generic_tasks.map((genericTask) => {
+          if (genericTask.id === timeEntry.task.id) {
+            timeEntry.task.custom_id = genericTask.custom_id;
+          }
+        });
       }
 
       const event = {
@@ -230,11 +241,23 @@ function App() {
       );
   }
 
-  useEffect(() => {
-    setWeekTitle(cal);
-    getTimeEntries(cal);
-    getSpaceTags();
-  }, []);
+  const getGenericTasks = () => {
+    fetch(
+      "http://localhost:8764/generic_tasks",
+        {
+          method: "GET",
+        }
+      ).then((response) => {
+          return response.json();
+        })
+        .then((data) => {
+          setGenericTasks(data);
+          return data;
+        })
+        .then((data) => {
+          getTimeEntries(cal, data);
+        });
+  }
 
   const handleSpaceTagChange = (event) => {
     setSelectedSpaceTags(event);
@@ -368,8 +391,6 @@ function App() {
           <Tasks
             setSelectedTask={setSelectedTask}
             selectedTask={selectedTask}
-            tags={tags}
-            setTags={setTags}
             getSprintTasks={() => getSprintTasks(selectedSpaceTags, mineOnly, archived)}
             tasks={tasks}
            />
