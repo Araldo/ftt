@@ -1,3 +1,16 @@
+# Introduction
+
+The purpose of this project is 2-fold
+
+- First React project after learning the language a week before.
+- I was fed up with the timetracking UI of ClickUp, as it was horribly slow and cumbersome.
+
+# Functionality & Limitations
+
+- UI with calender view where you can select a project you worked on and drag-drop it in the calender to assign time to it.
+- Filter by tag (e.g. you team or customer that was assigned to tickets).
+- It's quite specific for the way ClickUp was setup in Brainnwave. It won't be usable out-of-the-box.
+
 # Usage
 
 - Set CLICKUP_API_KEY environment variable to your ClickUp API key.
